@@ -3,11 +3,13 @@ package ink.laoliang.chrome;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import javax.swing.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InterruptedIOException;
+import java.io.*;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.nio.MappedByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
 import java.nio.charset.StandardCharsets;
 
 public class Main extends JFrame {
@@ -19,8 +21,9 @@ public class Main extends JFrame {
 
     public Main() {
 
-        super("Native Message Host");
+        super("Chrome Extensions For Uni Studio");
 
+        // 设置窗体
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setSize(400, 400);
         setVisible(true);
@@ -30,62 +33,85 @@ public class Main extends JFrame {
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         add(panel);
 
-        // 添加按钮，及按钮事件
-        JButton selectorButton = new JButton("选取 Chrome 浏览器页面元素");
-        selectorButton.addActionListener(new ButtonListener());
-        panel.add(selectorButton);
-
         // 添加文本显示区
         messageShowText = new JTextArea();
         messageShowText.setLineWrap(true);
         panel.add(new JScrollPane(messageShowText));
     }
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) {
 
         SwingUtilities.invokeLater(() -> jFrame = new Main());
 
-        while (true) {
+        try {
+            // 使用随机空闲的端口、侦听 backlog 和本地回环 IP 地址创建服务器
+            ServerSocket serverSocket = new ServerSocket(0, 0, InetAddress.getLoopbackAddress());
 
-            // 读取消息
-            String messageStr = readMessage(System.in);
-            MessageObject messageJson = mapper.readValue(messageStr, MessageObject.class);
-
-            // 本地应用消息框展示读取到的消息
-            messageShowText.setText(messageJson.getMessage());
-
-            // 恢复应用窗口
-            jFrame.setExtendedState(JFrame.NORMAL);
-        }
-    }
-
-    class ButtonListener implements ActionListener {
-
-        @Override
-        public void actionPerformed(ActionEvent event) {
-
-            try {
-                // 构建并发送消息
-                MessageObject messageJson = new MessageObject();
-                messageJson.setMessage("start selector");
-                String messageStr = mapper.writeValueAsString(messageJson);
-                sendMessage(messageStr);
-
-                // 最小化应用窗口
-                jFrame.setExtendedState(JFrame.ICONIFIED);
-            } catch (IOException e) {
-                e.printStackTrace();
+            // 建立文件和内存的映射，即时双向同步
+            RandomAccessFile raf = new RandomAccessFile("C:\\Users\\lpy\\Desktop\\data.dat", "rw");
+            // 获取共享内存和磁盘文件建立联系的文件通道类
+            FileChannel fc = raf.getChannel();
+            // 获取磁盘文件的内存映射
+            MappedByteBuffer mbb = fc.map(FileChannel.MapMode.READ_WRITE, 0, 5);
+            // 清除文件内容 ，对 MappedByteBuffer 的操作就是对文件的操作
+            for (int i = 0; i < 5; i++) {
+                mbb.put(i, (byte) 0);
             }
+            // 阻塞独占锁，写入本次启动服务的端口号（当文件锁不可用时，当前进程会被挂起）
+            FileLock flock = fc.lock();  // 上锁
+            mbb.putInt(serverSocket.getLocalPort());
+            flock.release();  // 释放锁
+
+            while (true) {
+
+                // 启动一个 Socket 服务
+                Socket server = serverSocket.accept();
+
+                try {
+
+                    DataInputStream in = new DataInputStream(server.getInputStream());  // 服务端输入流
+                    DataOutputStream out = new DataOutputStream(server.getOutputStream());  // 服务端输出流
+
+                    while (true) {
+
+                        // 从 RPA 主程序读取请求消息
+                        String rpaRequestMsg = in.readUTF();
+                        messageShowText.setText("Step11111111111111" + rpaRequestMsg);  // 小程序窗口显示一下
+
+                        // 构建并发送消息到 Chrome 扩展
+                        sendMessage(rpaRequestMsg);
+                        messageShowText.setText("Step22222222222222" + rpaRequestMsg);  // 小程序窗口显示一下
+
+                        // 从 Chrome 扩展读取响应
+                        String chromeResponseMsg = readMessage(System.in);
+                        messageShowText.setText("Step33333333333333" + chromeResponseMsg);  // 小程序窗口显示一下
+                        MessageObject chromeResponseJson = mapper.readValue(chromeResponseMsg, MessageObject.class);
+                        messageShowText.setText("Step44444444444444" + chromeResponseJson.getMessage());  // 小程序窗口显示一下
+
+                        // middleware 响应写回给 RPA 主程序
+                        out.writeUTF(chromeResponseJson.getMessage());
+                        messageShowText.setText("Step55555555555555" + chromeResponseJson.getMessage());  // 小程序窗口显示一下
+                    }
+
+                } catch (IOException e) {
+                    e.printStackTrace();
+                    // RPA 主程序断开连接，程序进入下一次等待连接状态
+                }
+            }
+
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
     private static String readMessage(InputStream in) throws IOException {
 
         byte[] messageLength = new byte[4];
-        in.read(messageLength); // 读取消息大小
+        in.read(messageLength);  // 读取消息大小
 
         int size = getInt(messageLength);
         if (size == 0) {
+            messageShowText.setText("messageLength: " + size);  // 小程序窗口显示一下
             throw new InterruptedIOException("Blocked communication");
         }
 

@@ -1,15 +1,18 @@
 {
-  "name": "Native Message For Java",
+  "name": "Uni Studio For Chrome",
   "description": "Send a message to a native Java application.",
   "version": "1.0",
   "manifest_version": 2,
   "icons": {
-    "16": "icons/icon16.png",
-    "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "48": "icons/48.png",
+    "64": "icons/64.png",
+    "128": "icons/128.png"
   },
   "permissions": [
-    "nativeMessaging"
+    "nativeMessaging",
+    "tabs"
   ],
   "background": {
     "scripts": [
@@ -22,7 +25,19 @@
         "<all_urls>"
       ],
       "js": [
-        "content.js"
+        "content.js",
+        "temp.js",
+
+        "JQWEB.js",
+        "ElementLibrary.js",
+        "FindLibrary.js",
+        "HTMLElementFunction.js",
+        "IDManager.js",
+        "PageRectUtil.js",
+        "SafePage.js",
+        "TraceMessage.js",
+        "TreeLibrary.js",
+        "Utils.js"
       ]
     }
   ]
